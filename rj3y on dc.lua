@@ -120,7 +120,7 @@ crossText.Color = Color3.new(1,1,1)
 crossText.Center = true
 crossText.Outline = true
 crossText.OutlineColor = Color3.new(0,0,0)
-crossText.Text = "ud.win"
+crossText.Text = "nxcnt.win"
 crossText.Visible = false
 
 -- spinning crosshair state
