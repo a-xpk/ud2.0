@@ -18,6 +18,9 @@ local function showPreloader()
 	local preGui = Instance.new("ScreenGui")
 	preGui.Name = "rj3yBlackscreen"
 	preGui.ResetOnSpawn = false
+	-- Ensure this ScreenGui displays above all other PlayerGui ScreenGuis for this player
+	preGui.DisplayOrder = 10000
+	preGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	preGui.Parent = LP:WaitForChild("PlayerGui")
 
 	local black = Instance.new("Frame", preGui)
@@ -31,7 +34,7 @@ local function showPreloader()
 	mainLabel.Size = UDim2.fromScale(0.9, 0.18)
 	mainLabel.Position = UDim2.fromScale(0.05, 0.4)
 	mainLabel.BackgroundTransparency = 1
-	mainLabel.Text = "if god was real,  wouldve been dead already"
+	mainLabel.Text = "sudo apt install uh i forgot"
 	mainLabel.Font = Enum.Font.GothamBold
 	mainLabel.TextColor3 = Color3.new(1, 1, 1)
 	mainLabel.TextScaled = true
@@ -83,7 +86,7 @@ local Settings = {
 	Crosshair = false
 }
 
-local VERSION = "v0.5b"
+local VERSION = "v0.6b"
 
 local Performance = {
 	MaxDistance = 700,
@@ -120,12 +123,19 @@ crossText.OutlineColor = Color3.new(0,0,0)
 crossText.Text = "ud.win"
 crossText.Visible = false
 
+-- spinning crosshair state
+local crossAngle = 0
+local crossSpinSpeed = math.pi -- radians per second
+
 -- =====================
 -- GUI (DRAGGABLE MENU)
 -- =====================
 local gui = Instance.new("ScreenGui")
-gui.Name = "ud script"
+gui.Name = "nxcnt.win"
 gui.ResetOnSpawn = false
+-- Keep this GUI above most other GUIs (preloader uses 10000)
+gui.DisplayOrder = 9999
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = LP:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame", gui)
@@ -139,7 +149,7 @@ else
 end
 frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
 frame.Active = true
-frame.Draggable = true
+	frame.Draggable = false
 
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0,16)
 
@@ -147,10 +157,43 @@ local title = Instance.new("TextLabel", frame)
 local titleHeight = isTouch and 0.12 or 0.16
 title.Size = UDim2.fromScale(1, titleHeight)
 title.BackgroundTransparency = 1
-title.Text = "ud script " .. VERSION
+title.Text = "nxcnt.win " .. VERSION
 title.Font = Enum.Font.GothamBold
 title.TextScaled = true
 title.TextColor3 = Color3.new(1,1,1)
+
+-- Custom drag handler (works on both mouse and touch)
+do
+	local dragging = false
+	local dragStart = Vector2.new(0,0)
+	local startPos = UDim2.new()
+
+	title.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if not dragging then return end
+		if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		local delta = input.Position - dragStart
+		local absStartX = startPos.X.Scale * Camera.ViewportSize.X + startPos.X.Offset
+		local absStartY = startPos.Y.Scale * Camera.ViewportSize.Y + startPos.Y.Offset
+		local newX = absStartX + delta.X
+		local newY = absStartY + delta.Y
+		newX = math.clamp(newX, 0, Camera.ViewportSize.X - frame.AbsoluteSize.X)
+		newY = math.clamp(newY, 0, Camera.ViewportSize.Y - frame.AbsoluteSize.Y)
+		frame.Position = UDim2.new(0, newX, 0, newY)
+	end)
+end
 
 -- Close / Open buttons
 local closeBtn = Instance.new("TextButton", frame)
@@ -222,7 +265,16 @@ local function toggleChanged(name, value)
 	if name == "LockOn" then
 		setSubmenuVisible("LockVisibleOnly", value)
 	end
+
+	if name == "Lines" and value == false then
+		for _, data in pairs(ESP) do
+			if data.Line then
+				data.Line.Visible = false
+			end
+		end
+	end
 end
+
 
 local function createToggle(name, order)
 	local btn = Instance.new("TextButton", frame)
@@ -398,6 +450,23 @@ local function getTargetPosition(char, target)
 	return nil
 end
 
+local function isTargetVisible(pos, char)
+	local origin = Camera.CFrame.Position
+	local direction = pos - origin
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Blacklist
+	params.FilterDescendantsInstances = {LP.Character}
+	params.IgnoreWater = true
+
+	local result = workspace:Raycast(origin, direction, params)
+	if not result then return false end
+	local hit = result.Instance
+	if hit and hit:IsDescendantOf(char) then
+		return true
+	end
+	return false
+end
+
 local function findNearestTarget()
 	if not LP.Character or not LP.Character:FindFirstChild("HumanoidRootPart") then return nil end
 	local myPos = LP.Character.HumanoidRootPart.Position
@@ -407,10 +476,12 @@ local function findNearestTarget()
 		if p ~= LP and p.Character then
 			local pos = getTargetPosition(p.Character, Settings.LockTarget)
 			if pos then
-				-- if visible-only is enabled, skip targets not on screen
+				local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
 				if Settings.LockVisibleOnly then
-					local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
 					if not onScreen then
+						continue
+					end
+					if not isTargetVisible(pos, p.Character) then
 						continue
 					end
 				end
@@ -433,7 +504,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local myPos = LP.Character.HumanoidRootPart.Position
 	local now = tick()
 
-	-- Crosshair handling
+	-- Crosshair handling (spinning)
 	local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
 	local chLen = isTouch and 18 or 10
 	local chColor = Settings.Rainbow and rainbow or Color3.new(1,1,1)
@@ -441,10 +512,15 @@ RunService.RenderStepped:Connect(function(dt)
 		crossHor.Visible = true
 		crossVer.Visible = true
 		crossText.Visible = true
-		crossHor.From = Vector2.new(center.X - chLen, center.Y)
-		crossHor.To = Vector2.new(center.X + chLen, center.Y)
-		crossVer.From = Vector2.new(center.X, center.Y - chLen)
-		crossVer.To = Vector2.new(center.X, center.Y + chLen)
+		crossAngle = (crossAngle + dt * crossSpinSpeed) % (2 * math.pi)
+		local a1 = crossAngle
+		local a2 = crossAngle + math.pi/2
+		local v1 = Vector2.new(math.cos(a1), math.sin(a1))
+		local v2 = Vector2.new(math.cos(a2), math.sin(a2))
+		crossHor.From = center + v1 * chLen
+		crossHor.To = center - v1 * chLen
+		crossVer.From = center + v2 * chLen
+		crossVer.To = center - v2 * chLen
 		crossHor.Color = chColor
 		crossVer.Color = chColor
 		crossText.Position = Vector2.new(center.X, center.Y + (isTouch and 26 or 14))
@@ -500,13 +576,18 @@ RunService.RenderStepped:Connect(function(dt)
 			end
 		end
 
-		if Settings.Lines and onScreen and now - lastLineUpdate >= Performance.LineUpdateRate then
-			data.Line.Visible = true
-			data.Line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
-			data.Line.To = Vector2.new(screenPos.X, screenPos.Y)
-			data.Line.Color = color
-		else
+		-- Ensure lines stay off when the setting is disabled
+		if not Settings.Lines then
 			data.Line.Visible = false
+		else
+			if onScreen and now - lastLineUpdate >= Performance.LineUpdateRate then
+				data.Line.Visible = true
+				data.Line.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+				data.Line.To = Vector2.new(screenPos.X, screenPos.Y)
+				data.Line.Color = color
+			else
+				data.Line.Visible = false
+			end
 		end
 	end
 
